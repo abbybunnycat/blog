@@ -223,6 +223,17 @@
         let articles = [];
         let currentCategory = '全部';
 
+        function parseTags(tagsData) {
+            if (!tagsData) return [];
+            if (Array.isArray(tagsData)) {
+                return tagsData.map(t => typeof t === 'string' ? t : (t.tag || '')).filter(Boolean);
+            }
+            if (typeof tagsData === 'string') {
+                return tagsData.split(/[,，]/).map(s => s.trim()).filter(Boolean);
+            }
+            return [];
+        }
+
         window.onload = async function() {
             try {
                 const response = await fetch('data/posts.json?v=' + Date.now());
@@ -304,6 +315,7 @@
                 const originalIndex = articles.indexOf(article);
                 const hasGallery = article.gallery && article.gallery.length > 0;
                 const hasVideo = article.youtube && article.youtube.trim() !== '';
+                const tagList = parseTags(article.tags);
 
                 return `
                 <article class="article-card bg-white rounded-2xl overflow-hidden border border-stone-200/70 flex flex-col justify-between cursor-pointer" onclick="openArticleModal(${originalIndex})">
@@ -340,7 +352,7 @@
                             </div>
                         ` : ''}
                         <div class="flex flex-wrap gap-1.5">
-                            ${(article.tags || []).map(tag => `<span class="text-[11px] text-stone-500 bg-stone-100 px-2 py-0.5 rounded">#${tag}</span>`).join('')}
+                            ${tagList.map(tag => `<span class="text-[11px] text-stone-500 bg-stone-100 px-2 py-0.5 rounded">#${tag}</span>`).join('')}
                         </div>
                     </div>
                 </article>
@@ -364,6 +376,7 @@
             if (!article) return;
 
             document.getElementById('modal-category').innerText = article.category;
+            const tagList = parseTags(article.tags);
             
             const formattedContent = article.content.split('\n\n').map(para => 
                 `<p class="text-stone-700 leading-relaxed text-base mb-4 whitespace-pre-line">${para}</p>`
@@ -433,7 +446,7 @@
                     ${galleryHtml}
 
                     <div class="pt-6 border-t border-stone-200 flex flex-wrap gap-2">
-                        ${(article.tags || []).map(tag => `<span class="text-xs bg-cream text-stone-600 px-3 py-1 rounded-full">#${tag}</span>`).join('')}
+                        ${tagList.map(tag => `<span class="text-xs bg-cream text-stone-600 px-3 py-1 rounded-full">#${tag}</span>`).join('')}
                     </div>
                 </div>
             `;
@@ -472,7 +485,7 @@
 
         function searchByTag(tagKeyword) {
             const results = articles.filter(a => 
-                (a.tags || []).some(t => t.includes(tagKeyword)) || a.title.includes(tagKeyword) || a.content.includes(tagKeyword)
+                parseTags(a.tags).some(t => t.includes(tagKeyword)) || a.title.includes(tagKeyword) || a.content.includes(tagKeyword)
             );
             currentCategory = `標籤：#${tagKeyword}`;
             renderArticles(results);
@@ -496,7 +509,7 @@
             const matched = articles.filter(a => 
                 a.title.toLowerCase().includes(q) || 
                 a.content.toLowerCase().includes(q) || 
-                (a.tags || []).some(t => t.toLowerCase().includes(q))
+                parseTags(a.tags).some(t => t.toLowerCase().includes(q))
             );
 
             if (matched.length === 0) {
