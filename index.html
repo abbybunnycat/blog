@@ -6,6 +6,7 @@
     <title>更年期少女的奇幻漂流｜有點不良但內心善良的生活誌</title>
     <meta name="description" content="有點不良但內心善良的熟女生活誌！紀錄親子出遊、大人味聚餐不踩雷、首飾收藏圖鑑、顯瘦穿搭與生活小撇步。">
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700&family=Noto+Serif+TC:wght@600;700&display=swap" rel="stylesheet">
@@ -55,6 +56,13 @@
         }
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        /* 文章內文圖文排版樣式 */
+        .article-rich-content p { margin-bottom: 1.15rem; line-height: 1.85; color: #3f3c3a; font-size: 1.02rem; }
+        .article-rich-content h2, .article-rich-content h3 { font-family: 'Noto Serif TC', serif; font-weight: 700; color: #2C2A29; margin-top: 1.75rem; margin-bottom: 0.75rem; font-size: 1.35rem; }
+        .article-rich-content img { border-radius: 1rem; margin: 1.5rem auto; max-height: 520px; width: auto; max-width: 100%; box-shadow: 0 8px 20px -6px rgba(44, 42, 41, 0.15); cursor: zoom-in; }
+        .article-rich-content blockquote { border-left: 4px solid #C86D51; background-color: #F2ECE1; padding: 0.85rem 1.25rem; border-radius: 0 0.75rem 0.75rem 0; margin: 1.25rem 0; font-style: italic; }
+        .article-rich-content ul { list-style-type: disc; padding-left: 1.5rem; margin-bottom: 1.15rem; }
+        .article-rich-content ol { list-style-type: decimal; padding-left: 1.5rem; margin-bottom: 1.15rem; }
     </style>
 </head>
 <body class="antialiased selection:bg-terracotta selection:text-white">
@@ -378,9 +386,10 @@
             document.getElementById('modal-category').innerText = article.category;
             const tagList = parseTags(article.tags);
             
-            const formattedContent = article.content.split('\n\n').map(para => 
-                `<p class="text-stone-700 leading-relaxed text-base mb-4 whitespace-pre-line">${para}</p>`
-            ).join('');
+            // 支援 Markdown 圖文混排解析（包含文章內文插圖）
+            const formattedContent = window.marked 
+                ? marked.parse(article.content || '') 
+                : (article.content || '').split('\n\n').map(para => `<p class="mb-4 whitespace-pre-line">${para}</p>`).join('');
 
             const embedUrl = getYouTubeEmbedUrl(article.youtube);
             const videoHtml = embedUrl ? `
@@ -438,7 +447,7 @@
                              alt="${article.title}" class="w-full h-full object-cover">
                     </div>
 
-                    <div class="prose max-w-none pt-2">
+                    <div id="article-content-area" class="article-rich-content pt-2">
                         ${formattedContent}
                     </div>
 
@@ -453,6 +462,11 @@
 
             document.getElementById('article-modal').classList.remove('hidden');
             document.body.style.overflow = 'hidden';
+
+            // 讓文章內文插入的照片也可以點擊放大檢視
+            document.querySelectorAll('#article-content-area img').forEach(img => {
+                img.addEventListener('click', () => openLightbox(img.src));
+            });
         }
 
         function closeArticleModal() {
