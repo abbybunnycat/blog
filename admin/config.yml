@@ -1,6 +1,6 @@
 backend:
   name: github
-  repo: abbybunnycat/abbybunnycat-blog
+  repo: abbybunnycat/blog
   branch: main
 
 media_folder: "images/uploads"
