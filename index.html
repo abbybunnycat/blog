@@ -56,10 +56,10 @@
         }
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-        /* 文章內文圖文排版樣式 */
+        /* 文章內文圖文混排專屬樣式 */
         .article-rich-content p { margin-bottom: 1.15rem; line-height: 1.85; color: #3f3c3a; font-size: 1.02rem; }
         .article-rich-content h2, .article-rich-content h3 { font-family: 'Noto Serif TC', serif; font-weight: 700; color: #2C2A29; margin-top: 1.75rem; margin-bottom: 0.75rem; font-size: 1.35rem; }
-        .article-rich-content img { border-radius: 1rem; margin: 1.5rem auto; max-height: 520px; width: auto; max-width: 100%; box-shadow: 0 8px 20px -6px rgba(44, 42, 41, 0.15); cursor: zoom-in; }
+        .article-rich-content img { border-radius: 1rem; margin: 1.5rem auto; max-height: 520px; width: auto; max-width: 100%; box-shadow: 0 8px 20px -6px rgba(44, 42, 41, 0.15); cursor: zoom-in; display: block; }
         .article-rich-content blockquote { border-left: 4px solid #C86D51; background-color: #F2ECE1; padding: 0.85rem 1.25rem; border-radius: 0 0.75rem 0.75rem 0; margin: 1.25rem 0; font-style: italic; }
         .article-rich-content ul { list-style-type: disc; padding-left: 1.5rem; margin-bottom: 1.15rem; }
         .article-rich-content ol { list-style-type: decimal; padding-left: 1.5rem; margin-bottom: 1.15rem; }
@@ -322,7 +322,7 @@
             grid.innerHTML = listToRender.map((article) => {
                 const originalIndex = articles.indexOf(article);
                 const hasGallery = article.gallery && article.gallery.length > 0;
-                const hasVideo = article.youtube && article.youtube.trim() !== '';
+                const hasVideo = (article.youtube && article.youtube.trim() !== '') || /(youtube\.com|youtu\.be)/i.test(article.content || '');
                 const tagList = parseTags(article.tags);
 
                 return `
@@ -379,6 +379,141 @@
             return null;
         }
 
+        // 自動把文章段落中獨立貼上的 YouTube 網址轉換成高畫質嵌入式播放器
+        function embedInlineYouTube(rawText) {
+            if (!rawText) return '';
+            const lines = rawText.split('\n');
+            return lines.map(line => {
+                const trimmed = line.trim();
+                // 偵測整行是否為單純的 YouTube 連結（包含一般影片與 Shorts）
+                if (/^https?:\/\/(?:www\.)?(?:youtube\.com\/(?:watch\?v=|shorts\/)|youtu\.be\/)[^\s]+$/i.test(trimmed)) {
+                    const embed = getYouTubeEmbedUrl(trimmed);
+                    if (embed) {
+                        return `\n<div class="my-6"><div class="relative w-full aspect-video rounded-2xl overflow-hidden shadow-md bg-black"><iframe src="${embed}" class="absolute inset-0 w-full h-full" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe></div></div>\n`;
+                    }
+                }
+                return line;
+            }).join('\n');
+        }
+
+        // === 防洗版留言系統邏輯 ===
+        let currentCaptchaAnswer = 0;
+
+        function getArticleStorageKey(article) {
+            return 'drift_comments_' + encodeURIComponent(article.date + '_' + article.title.substring(0, 15));
+        }
+
+        function generateCaptcha() {
+            const a = Math.floor(Math.random() * 8) + 1;
+            const b = Math.floor(Math.random() * 8) + 1;
+            currentCaptchaAnswer = a + b;
+            const labelEl = document.getElementById('captcha-question');
+            if (labelEl) labelEl.innerText = `${a} + ${b} = ?`;
+        }
+
+        function renderCommentsList(articleIndex) {
+            const article = articles[articleIndex];
+            const listContainer = document.getElementById('comments-list');
+            if (!article || !listContainer) return;
+
+            const key = getArticleStorageKey(article);
+            const saved = JSON.parse(localStorage.getItem(key) || '[]');
+
+            if (saved.length === 0) {
+                listContainer.innerHTML = `
+                    <div class="text-center py-6 text-stone-400 text-xs bg-white/60 rounded-2xl border border-dashed border-stone-200">
+                        還沒有人留下漂流瓶訊息，來當第一個跟少女聊天的同好吧！✨
+                    </div>
+                `;
+                return;
+            }
+
+            listContainer.innerHTML = saved.map(c => `
+                <div class="bg-white p-4 rounded-2xl border border-stone-200/70 shadow-2xs space-y-1.5">
+                    <div class="flex items-center justify-between">
+                        <span class="font-bold text-xs text-charcoal flex items-center">
+                            <span class="w-5 h-5 rounded-full bg-terracotta/15 text-terracotta inline-flex items-center justify-center mr-1.5 text-[10px]">🐾</span>
+                            ${c.author}
+                        </span>
+                        <span class="text-[11px] text-stone-400">${c.time}</span>
+                    </div>
+                    <p class="text-sm text-stone-700 leading-relaxed whitespace-pre-line">${c.text}</p>
+                </div>
+            `).join('');
+        }
+
+        function submitComment(articleIndex) {
+            const article = articles[articleIndex];
+            const authorInput = document.getElementById('comment-author');
+            const textInput = document.getElementById('comment-text');
+            const captchaInput = document.getElementById('comment-captcha');
+            const msgBox = document.getElementById('comment-feedback');
+
+            const author = (authorInput.value || '').trim() || '路過的善良好朋友';
+            const text = (textInput.value || '').trim();
+            const captchaVal = parseInt(captchaInput.value, 10);
+
+            const showFeedback = (msg, isError = true) => {
+                msgBox.innerText = msg;
+                msgBox.className = `text-xs font-medium mt-2 ${isError ? 'text-red-600' : 'text-sage'}`;
+                msgBox.classList.remove('hidden');
+            };
+
+            // 1. 檢查空白與字數上限（防止超長亂碼洗版）
+            if (!text || text.length < 2) {
+                showFeedback('請至少輸入 2 個字的心得再送出喔！');
+                return;
+            }
+            if (text.length > 300) {
+                showFeedback('留言太長囉（上限 300 字），精簡一點少女比較看得完！');
+                return;
+            }
+
+            // 2. 第一重防護：人類算術驗證（阻擋垃圾廣告機器人）
+            if (isNaN(captchaVal) || captchaVal !== currentCaptchaAnswer) {
+                showFeedback('算術驗證答錯囉！請再算一次（這是為了防止機器人洗版）');
+                generateCaptcha();
+                captchaInput.value = '';
+                return;
+            }
+
+            // 3. 第二重防護：60 秒發文冷卻限制（防止連續刷屏）
+            const lastPostTime = parseInt(localStorage.getItem('drift_last_comment_time') || '0', 10);
+            const now = Date.now();
+            if (now - lastPostTime < 60000) {
+                const waitSec = Math.ceil((60000 - (now - lastPostTime)) / 1000);
+                showFeedback(`喝口茶休息一下～為防止洗版，請等 ${waitSec} 秒後再發下一則留言！`);
+                return;
+            }
+
+            // 4. 第三重防護：阻擋重複內容灌水
+            const key = getArticleStorageKey(article);
+            const saved = JSON.parse(localStorage.getItem(key) || '[]');
+            if (saved.some(item => item.text === text)) {
+                showFeedback('這句話你剛剛已經留過囉！');
+                return;
+            }
+
+            // 通過所有防護，安全寫入留言
+            const escapeHtml = str => str.replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
+            const dateStr = new Date().toLocaleString('zh-TW', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+
+            saved.unshift({
+                author: escapeHtml(author.substring(0, 20)),
+                text: escapeHtml(text),
+                time: dateStr
+            });
+
+            localStorage.setItem(key, JSON.stringify(saved));
+            localStorage.setItem('drift_last_comment_time', now.toString());
+
+            textInput.value = '';
+            captchaInput.value = '';
+            generateCaptcha();
+            renderCommentsList(articleIndex);
+            showFeedback('✨ 留言已成功放進漂流瓶！謝謝你的溫暖回應～', false);
+        }
+
         function openArticleModal(index) {
             const article = articles[index];
             if (!article) return;
@@ -386,10 +521,11 @@
             document.getElementById('modal-category').innerText = article.category;
             const tagList = parseTags(article.tags);
             
-            // 支援 Markdown 圖文混排解析（包含文章內文插圖）
+            // 先將文章內文獨立行貼上的 YouTube 連結轉成嵌入式播放器，再交給 Markdown 解析圖片與排版
+            const contentWithVideos = embedInlineYouTube(article.content || '');
             const formattedContent = window.marked 
-                ? marked.parse(article.content || '') 
-                : (article.content || '').split('\n\n').map(para => `<p class="mb-4 whitespace-pre-line">${para}</p>`).join('');
+                ? marked.parse(contentWithVideos) 
+                : contentWithVideos.split('\n\n').map(para => `<p class="mb-4 whitespace-pre-line">${para}</p>`).join('');
 
             const embedUrl = getYouTubeEmbedUrl(article.youtube);
             const videoHtml = embedUrl ? `
@@ -457,11 +593,50 @@
                     <div class="pt-6 border-t border-stone-200 flex flex-wrap gap-2">
                         ${tagList.map(tag => `<span class="text-xs bg-cream text-stone-600 px-3 py-1 rounded-full">#${tag}</span>`).join('')}
                     </div>
+
+                    <!-- 文末防洗版讀者回應留言板 -->
+                    <div class="mt-8 pt-6 border-t border-stone-200">
+                        <div class="bg-cream/80 rounded-3xl p-5 sm:p-6 border border-stone-200/80 space-y-4">
+                            <div class="flex items-center justify-between">
+                                <h4 class="magazine-title text-lg font-bold text-charcoal flex items-center">
+                                    <i class="fa-regular fa-comment-dots text-terracotta mr-2"></i>漂流瓶留言板
+                                </h4>
+                                <span class="text-[11px] text-stone-500 bg-white px-2.5 py-1 rounded-full border border-stone-200/60">
+                                    🛡️ 已開啟防機器人與防洗版保護
+                                </span>
+                            </div>
+
+                            <div class="space-y-3">
+                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    <input type="text" id="comment-author" maxlength="20" placeholder="你的暱稱（選填，預設：路過的善良好朋友）" class="w-full bg-white text-sm px-3.5 py-2.5 rounded-xl border border-stone-200 focus:outline-none focus:border-terracotta">
+                                    <div class="flex items-center bg-white px-3.5 py-2 rounded-xl border border-stone-200 space-x-2">
+                                        <span class="text-xs text-stone-500 whitespace-nowrap">防洗版驗證：</span>
+                                        <span id="captcha-question" class="text-xs font-bold text-terracotta whitespace-nowrap"></span>
+                                        <input type="number" id="comment-captcha" placeholder="輸入答案" class="w-full text-sm focus:outline-none">
+                                    </div>
+                                </div>
+                                <textarea id="comment-text" rows="3" maxlength="300" placeholder="想跟少女說什麼？（歡迎交流美食名單、育兒真心話或可愛小動物情報，上限 300 字）" class="w-full bg-white text-sm p-3.5 rounded-xl border border-stone-200 focus:outline-none focus:border-terracotta"></textarea>
+                                <div class="flex items-center justify-between">
+                                    <span class="text-[11px] text-stone-400">每次留言間隔 60 秒・拒絕廣告灌水</span>
+                                    <button onclick="submitComment(${index})" class="bg-charcoal hover:bg-terracotta text-white text-xs sm:text-sm font-medium px-5 py-2.5 rounded-full shadow-xs transition">
+                                        送出回應 <i class="fa-solid fa-paper-plane ml-1"></i>
+                                    </button>
+                                </div>
+                                <p id="comment-feedback" class="hidden"></p>
+                            </div>
+
+                            <div id="comments-list" class="pt-3 space-y-3"></div>
+                        </div>
+                    </div>
                 </div>
             `;
 
             document.getElementById('article-modal').classList.remove('hidden');
             document.body.style.overflow = 'hidden';
+
+            // 初始化驗證題與載入該篇文章留言
+            generateCaptcha();
+            renderCommentsList(index);
 
             // 讓文章內文插入的照片也可以點擊放大檢視
             document.querySelectorAll('#article-content-area img').forEach(img => {
