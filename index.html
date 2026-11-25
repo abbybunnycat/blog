@@ -244,11 +244,37 @@
 
         window.onload = async function() {
             try {
-                const response = await fetch('data/posts.json?v=' + Date.now());
-                if (!response.ok) throw new Error('無法讀取文章資料');
-                const data = await response.json();
-                articles = data.posts || [];
+                // 1. 讀取早期存檔文章 (data/posts.json)
+                let legacyPosts = [];
+                try {
+                    const response = await fetch('data/posts.json?v=' + Date.now());
+                    if (response.ok) {
+                        const data = await response.json();
+                        legacyPosts = data.posts || [];
+                    }
+                } catch (e) { console.warn('讀取早期文章略過:', e); }
+
+                // 2. 自動向 GitHub 讀取 posts/ 資料夾裡所有獨立新文章（完全即時、免等待！）
+                let folderPosts = [];
+                try {
+                    const ghRes = await fetch('https://api.github.com/repos/abbybunnycat/blog/contents/posts?ref=main&t=' + Date.now());
+                    if (ghRes.ok) {
+                        const files = await ghRes.json();
+                        if (Array.isArray(files)) {
+                            const jsonFiles = files.filter(f => f.name.endsWith('.json'));
+                            const postPromises = jsonFiles.map(f => 
+                                fetch(`posts/${f.name}?v=${Date.now()}`).then(r => r.ok ? r.json() : null)
+                            );
+                            const loaded = await Promise.all(postPromises);
+                            folderPosts = loaded.filter(Boolean);
+                        }
+                    }
+                } catch (e) { console.warn('尚無獨立新文章資料夾:', e); }
+
+                // 3. 合併新舊文章並依照日期「由新到舊」自動排序
+                articles = [...folderPosts, ...legacyPosts];
                 articles.sort((a, b) => new Date(b.date) - new Date(a.date));
+
                 renderFeatured();
                 renderArticles();
             } catch (error) {
