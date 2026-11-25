@@ -31,7 +31,7 @@ collections:
               - label: "發佈日期（YYYY-MM-DD）"
                 name: "date"
                 widget: "string"
-                default: "2026-11-24"
+                default: "2026-11-25"
               - label: "封面主圖（建議橫式照片）"
                 name: "image"
                 widget: "image"
@@ -39,7 +39,7 @@ collections:
                 name: "highlight"
                 widget: "string"
                 required: false
-              - label: "YouTube 影片網址（選填）"
+              - label: "文末固定 YouTube 影片網址（選填；若想插在段落中間，請直接貼在下方內文裡）"
                 name: "youtube"
                 widget: "string"
                 required: false
@@ -55,7 +55,7 @@ collections:
                 name: "summary"
                 widget: "text"
                 required: false
-              - label: "文章詳細內容（支援段落間直接插入照片！）"
+              - label: "文章詳細內容（支援段落間直接插入照片，或單獨一行貼上 YouTube 網址！）"
                 name: "content"
                 widget: "markdown"
               - label: "搜尋標籤（請用逗號隔開）"
