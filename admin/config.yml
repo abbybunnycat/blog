@@ -3,7 +3,7 @@ backend:
   branch: main
 
 media_folder: "images/uploads"
-public_folder: "images/uploads"
+public_folder: "/images/uploads"
 
 locale: 'zh-Hant'
 
@@ -31,8 +31,8 @@ collections:
               - label: "發佈日期（YYYY-MM-DD）"
                 name: "date"
                 widget: "string"
-                default: "2026-11-23"
-              - label: "封面主圖"
+                default: "2026-11-24"
+              - label: "封面主圖（建議橫式照片）"
                 name: "image"
                 widget: "image"
               - label: "少女真實評分卡亮點（選填）"
@@ -43,7 +43,7 @@ collections:
                 name: "youtube"
                 widget: "string"
                 required: false
-              - label: "更多照片寫真集（可新增多張照片）"
+              - label: "更多照片寫真集（在文末顯示九宮格）"
                 name: "gallery"
                 widget: "list"
                 required: false
@@ -55,9 +55,9 @@ collections:
                 name: "summary"
                 widget: "text"
                 required: false
-              - label: "文章詳細內容"
+              - label: "文章詳細內容（支援段落間直接插入照片！）"
                 name: "content"
-                widget: "text"
+                widget: "markdown"
               - label: "搜尋標籤（請用逗號隔開）"
                 name: "tags"
                 widget: "string"
