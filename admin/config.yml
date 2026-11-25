@@ -9,10 +9,77 @@ public_folder: "images/uploads"
 locale: 'zh-Hant'
 
 collections:
-  - name: "blog"
-    label: "漂流日記文章管理"
+  - name: "articles"
+    label: "漂流日記文章（每篇獨立・最新排最前）"
+    folder: "posts"
+    create: true
+    extension: "json"
+    format: "json"
+    slug: "{{year}}-{{month}}-{{day}}-{{slug}}"
+    sortable_fields: ["date", "title", "category"]
+    view_filters:
+      - label: "🍽️ 聚餐不踩雷"
+        field: "category"
+        pattern: "聚餐"
+      - label: "🏕️ 親子＆放風出遊"
+        field: "category"
+        pattern: "出遊"
+      - label: "💍 我的首飾盒"
+        field: "category"
+        pattern: "首飾"
+      - label: "👗 熟女微叛逆穿搭"
+        field: "category"
+        pattern: "穿搭"
+    summary: "{{date}}｜[{{category}}] {{title}}"
+    fields:
+      - label: "文章標題"
+        name: "title"
+        widget: "string"
+        hint: "建議包含地點或痛點關鍵字，對 Google 搜尋流量更有幫助！"
+      - label: "文章分類"
+        name: "category"
+        widget: "select"
+        options: ["聚餐", "出遊", "首飾", "穿搭", "造型", "生活小撇步"]
+        default: "聚餐"
+      - label: "發佈日期（YYYY-MM-DD）"
+        name: "date"
+        widget: "string"
+        default: "2026-11-25"
+      - label: "封面主圖"
+        name: "image"
+        widget: "image"
+      - label: "少女真實評分卡亮點（選填）"
+        name: "highlight"
+        widget: "string"
+        required: false
+      - label: "YouTube 影片網址（選填）"
+        name: "youtube"
+        widget: "string"
+        required: false
+      - label: "更多照片寫真集（可新增多張照片）"
+        name: "gallery"
+        widget: "list"
+        required: false
+        fields:
+          - label: "選擇照片"
+            name: "image"
+            widget: "image"
+      - label: "文章摘要（顯示在首頁卡片上）"
+        name: "summary"
+        widget: "text"
+        required: false
+      - label: "文章詳細內容（支援段落間直接插入照片或貼 YouTube 網址！）"
+        name: "content"
+        widget: "markdown"
+      - label: "搜尋標籤（請用逗號隔開）"
+        name: "tags"
+        widget: "string"
+        required: false
+
+  - name: "legacy_blog"
+    label: "早期存檔文章（舊版清單）"
     files:
-      - label: "所有文章列表"
+      - label: "早期 6 篇文章清單"
         name: "posts"
         file: "data/posts.json"
         fields:
@@ -32,34 +99,25 @@ collections:
               - label: "發佈日期（YYYY-MM-DD）"
                 name: "date"
                 widget: "string"
-                default: "2026-11-25"
-              - label: "封面主圖（建議橫式照片）"
+              - label: "封面主圖"
                 name: "image"
                 widget: "image"
               - label: "少女真實評分卡亮點（選填）"
                 name: "highlight"
                 widget: "string"
                 required: false
-              - label: "文末固定 YouTube 影片網址（選填；若想插在段落中間，請直接貼在下方內文裡）"
+              - label: "YouTube 影片網址（選填）"
                 name: "youtube"
                 widget: "string"
                 required: false
-              - label: "更多照片寫真集（在文末顯示九宮格）"
-                name: "gallery"
-                widget: "list"
-                required: false
-                fields:
-                  - label: "選擇照片"
-                    name: "image"
-                    widget: "image"
-              - label: "文章摘要（顯示在首頁卡片上）"
+              - label: "文章摘要"
                 name: "summary"
                 widget: "text"
                 required: false
-              - label: "文章詳細內容（支援段落間直接插入照片，或單獨一行貼上 YouTube 網址！）"
+              - label: "文章詳細內容"
                 name: "content"
                 widget: "markdown"
-              - label: "搜尋標籤（請用逗號隔開）"
+              - label: "搜尋標籤"
                 name: "tags"
                 widget: "string"
                 required: false
