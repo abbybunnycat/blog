@@ -1,9 +1,10 @@
 backend:
-  name: git-gateway
+  name: github
+  repo: abbybunnycat/abbybunnycat-blog
   branch: main
 
 media_folder: "images/uploads"
-public_folder: "/images/uploads"
+public_folder: "images/uploads"
 
 locale: 'zh-Hant'
 
