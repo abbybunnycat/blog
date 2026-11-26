@@ -572,7 +572,10 @@
 
             let galleryImages = [];
             if (article.gallery && Array.isArray(article.gallery)) {
-                galleryImages = article.gallery.map(item => typeof item === 'string' ? item : item.image).filter(Boolean);
+                galleryImages = article.gallery
+                    .map(item => (typeof item === 'string' ? item : (item && item.image ? item.image : '')))
+                    .filter(Boolean)
+                    .map(src => src.startsWith('/') ? src.substring(1) : src);
             }
 
             const galleryHtml = galleryImages.length > 0 ? `
