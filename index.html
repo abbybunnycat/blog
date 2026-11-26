@@ -60,6 +60,11 @@
         .article-rich-content p { margin-bottom: 1.15rem; line-height: 1.85; color: #3f3c3a; font-size: 1.02rem; }
         .article-rich-content h2, .article-rich-content h3 { font-family: 'Noto Serif TC', serif; font-weight: 700; color: #2C2A29; margin-top: 1.75rem; margin-bottom: 0.75rem; font-size: 1.35rem; }
         .article-rich-content img { border-radius: 1rem; margin: 1.5rem auto; max-height: 520px; width: auto; max-width: 100%; box-shadow: 0 8px 20px -6px rgba(44, 42, 41, 0.15); cursor: zoom-in; display: block; }
+        /* 連續兩張或三張照片自動左右並排網格 */
+        .article-rich-content .photo-grid-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.75rem; margin: 1.5rem 0; }
+        .article-rich-content .photo-grid-triple { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.65rem; margin: 1.5rem 0; }
+        .article-rich-content .photo-grid-pair img, .article-rich-content .photo-grid-triple img { margin: 0; width: 100%; height: 240px; object-fit: cover; border-radius: 0.85rem; }
+        @media (min-width: 640px) { .article-rich-content .photo-grid-pair img { height: 320px; } }
         .article-rich-content blockquote { border-left: 4px solid #C86D51; background-color: #F2ECE1; padding: 0.85rem 1.25rem; border-radius: 0 0.75rem 0.75rem 0; margin: 1.25rem 0; font-style: italic; }
         .article-rich-content ul { list-style-type: disc; padding-left: 1.5rem; margin-bottom: 1.15rem; }
         .article-rich-content ol { list-style-type: decimal; padding-left: 1.5rem; margin-bottom: 1.15rem; }
@@ -227,19 +232,9 @@
         </div>
     </div>
 
-   <script>
+    <script>
         let articles = [];
         let currentCategory = '全部';
-
-        // 自動修正圖片路徑：把開頭多餘的 "/" 拿掉（解決 GitHub Pages 子目錄 /blog/ 找不到 /images/uploads/ 的問題）
-        function fixImagePath(path) {
-            if (!path || typeof path !== 'string') return '';
-            const trimmed = path.trim();
-            if (trimmed.startsWith('/images/')) {
-                return trimmed.replace(/^\/+/, '');
-            }
-            return trimmed;
-        }
 
         function parseTags(tagsData) {
             if (!tagsData) return [];
@@ -264,29 +259,22 @@
                     }
                 } catch (e) { console.warn('讀取早期文章略過:', e); }
 
-                // 2. 自動向 GitHub 讀取 posts/ 資料夾裡所有獨立新文章
+                // 2. 自動向 GitHub 讀取 posts/ 資料夾裡所有獨立新文章（完全即時、免等待！）
                 let folderPosts = [];
                 try {
                     const ghRes = await fetch('https://api.github.com/repos/abbybunnycat/blog/contents/posts?ref=main&t=' + Date.now());
                     if (ghRes.ok) {
                         const files = await ghRes.json();
                         if (Array.isArray(files)) {
-                            const jsonFiles = files.filter(f => f && typeof f.name === 'string' && f.name.endsWith('.json'));
-                            const postPromises = jsonFiles.map(async f => {
-                                try {
-                                    const r = await fetch(`posts/${encodeURIComponent(f.name)}?v=${Date.now()}`);
-                                    if (!r.ok) return null;
-                                    return await r.json();
-                                } catch (err) {
-                                    console.warn('單篇文章讀取失敗，已略過:', f.name, err);
-                                    return null;
-                                }
-                            });
+                            const jsonFiles = files.filter(f => f.name.endsWith('.json'));
+                            const postPromises = jsonFiles.map(f => 
+                                fetch(`posts/${f.name}?v=${Date.now()}`).then(r => r.ok ? r.json() : null)
+                            );
                             const loaded = await Promise.all(postPromises);
-                            folderPosts = loaded.filter(item => item && item.title);
+                            folderPosts = loaded.filter(Boolean);
                         }
                     }
-                } catch (e) { console.warn('讀取 posts 資料夾失敗:', e); }
+                } catch (e) { console.warn('尚無獨立新文章資料夾:', e); }
 
                 // 3. 合併新舊文章並依照日期「由新到舊」自動排序
                 articles = [...folderPosts, ...legacyPosts];
@@ -319,12 +307,10 @@
             const container = document.getElementById('featured-container');
             if (articles.length === 0) return;
             const latest = articles[0];
-            const coverImg = fixImagePath(latest.image);
-            const contentText = latest.content || '';
             container.innerHTML = `
                 <div class="bg-white rounded-2xl p-4 shadow-md border border-stone-100 cursor-pointer group" onclick="openArticleModal(0)">
                     <div class="relative h-48 sm:h-56 rounded-xl overflow-hidden mb-4 bg-cream">
-                        <img src="${coverImg}" 
+                        <img src="${latest.image}" 
                              onerror="this.src='https://placehold.co/800x500/E6DDD0/2C2A29?text=Featured+Story'"
                              alt="${latest.title}" class="w-full h-full object-cover group-hover:scale-105 transition duration-500">
                         <span class="absolute top-3 left-3 bg-terracotta text-white text-xs font-bold px-3 py-1 rounded-full shadow">
@@ -335,7 +321,7 @@
                         ${latest.title}
                     </h3>
                     <p class="text-xs text-stone-500 mt-1.5 line-clamp-2">
-                        ${latest.summary || contentText.substring(0, 80) + '...'}
+                        ${latest.summary || latest.content.substring(0, 80) + '...'}
                     </p>
                 </div>
             `;
@@ -369,14 +355,12 @@
                 const hasGallery = article.gallery && article.gallery.length > 0;
                 const hasVideo = (article.youtube && article.youtube.trim() !== '') || /(youtube\.com|youtu\.be)/i.test(article.content || '');
                 const tagList = parseTags(article.tags);
-                const coverImg = fixImagePath(article.image);
-                const contentText = article.content || '';
 
                 return `
                 <article class="article-card bg-white rounded-2xl overflow-hidden border border-stone-200/70 flex flex-col justify-between cursor-pointer" onclick="openArticleModal(${originalIndex})">
                     <div>
                         <div class="relative h-52 overflow-hidden bg-cream">
-                            <img src="${coverImg}" 
+                            <img src="${article.image}" 
                                  onerror="this.src='https://placehold.co/600x400/E6DDD0/2C2A29?text=Lifestyle+Journal'"
                                  alt="${article.title}" class="w-full h-full object-cover transition duration-500 hover:scale-105">
                             <span class="absolute top-3 left-3 bg-charcoal/85 backdrop-blur-xs text-white text-xs font-medium px-3 py-1 rounded-full">
@@ -395,7 +379,7 @@
                                 ${article.title}
                             </h3>
                             <p class="text-xs sm:text-sm text-stone-600 line-clamp-3 leading-relaxed mb-3">
-                                ${article.summary || contentText.substring(0, 90) + '...'}
+                                ${article.summary || article.content.substring(0, 90) + '...'}
                             </p>
                         </div>
                     </div>
@@ -416,41 +400,30 @@
 
         function getYouTubeEmbedUrl(url) {
             if (!url) return null;
-            const cleanUrl = String(url).trim();
-            const match = cleanUrl.match(/(?:youtube\.com\/(?:[^\/\s]+\/.+\/|(?:v|e(?:mbed)?|shorts|live)\/|.*[?&]v=)|youtu\.be\/)([A-Za-z0-9_-]{11})/);
+            let videoId = '';
+            const regExp = /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?|shorts)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/;
+            const match = url.match(regExp);
             if (match && match[1]) {
-                return `https://www.youtube.com/embed/${match[1]}`;
+                videoId = match[1];
+                return `https://www.youtube.com/embed/${videoId}`;
             }
             return null;
         }
 
-        function buildYouTubeIframeHtml(embedUrl) {
-            return `\n<div class="my-6"><div class="relative w-full aspect-video rounded-2xl overflow-hidden shadow-md bg-black"><iframe src="${embedUrl}" class="absolute inset-0 w-full h-full" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe></div></div>\n`;
-        }
-
-        // 自動把文章段落中的 YouTube 網址轉換成嵌入式播放器，並把內文圖片的 /images/ 自動轉成相對路徑
-        function preprocessMarkdownContent(rawText) {
+        // 自動把文章段落中獨立貼上的 YouTube 網址轉換成高畫質嵌入式播放器
+        function embedInlineYouTube(rawText) {
             if (!rawText) return '';
-            // 自動修正內文 Markdown 圖片 ![](/images/...) 與 HTML <img src="/images/..."> 的開頭斜線
-            const fixedImages = String(rawText)
-                .replace(/(!\[[^\]]*\]\()\/+(images\/)/g, '$1$2')
-                .replace(/(src=["'])\/+(images\/)/gi, '$1$2');
-
-            const lines = fixedImages.split('\n');
+            const lines = rawText.split('\n');
             return lines.map(line => {
                 const trimmed = line.trim();
-                const mdLinkMatch = trimmed.match(/^\[[^\]]*\]\((https?:\/\/[^\s)]+)\)$/);
-                const targetUrl = mdLinkMatch ? mdLinkMatch[1] : trimmed;
-                const resolvedEmbed = getYouTubeEmbedUrl(targetUrl);
-
-                if (resolvedEmbed && (!trimmed.includes(' ') || mdLinkMatch)) {
-                    return buildYouTubeIframeHtml(resolvedEmbed);
+                // 偵測整行是否為單純的 YouTube 連結（包含一般影片與 Shorts）
+                if (/^https?:\/\/(?:www\.)?(?:youtube\.com\/(?:watch\?v=|shorts\/)|youtu\.be\/)[^\s]+$/i.test(trimmed)) {
+                    const embed = getYouTubeEmbedUrl(trimmed);
+                    if (embed) {
+                        return `\n<div class="my-6"><div class="relative w-full aspect-video rounded-2xl overflow-hidden shadow-md bg-black"><iframe src="${embed}" class="absolute inset-0 w-full h-full" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe></div></div>\n`;
+                    }
                 }
-
-                return line.replace(/https?:\/\/(?:www\.|m\.)?(?:youtube\.com\/(?:[^\/\s]+\/.+\/|(?:v|e(?:mbed)?|shorts|live)\/|.*[?&]v=)|youtu\.be\/)[A-Za-z0-9_-]{11}[^\s)"]*/gi, matchedUrl => {
-                    const inlineEmbed = getYouTubeEmbedUrl(matchedUrl);
-                    return inlineEmbed ? buildYouTubeIframeHtml(inlineEmbed) : matchedUrl;
-                });
+                return line;
             }).join('\n');
         }
 
@@ -517,6 +490,7 @@
                 msgBox.classList.remove('hidden');
             };
 
+            // 1. 檢查空白與字數上限（防止超長亂碼洗版）
             if (!text || text.length < 2) {
                 showFeedback('請至少輸入 2 個字的心得再送出喔！');
                 return;
@@ -526,6 +500,7 @@
                 return;
             }
 
+            // 2. 第一重防護：人類算術驗證（阻擋垃圾廣告機器人）
             if (isNaN(captchaVal) || captchaVal !== currentCaptchaAnswer) {
                 showFeedback('算術驗證答錯囉！請再算一次（這是為了防止機器人洗版）');
                 generateCaptcha();
@@ -533,6 +508,7 @@
                 return;
             }
 
+            // 3. 第二重防護：60 秒發文冷卻限制（防止連續刷屏）
             const lastPostTime = parseInt(localStorage.getItem('drift_last_comment_time') || '0', 10);
             const now = Date.now();
             if (now - lastPostTime < 60000) {
@@ -541,6 +517,7 @@
                 return;
             }
 
+            // 4. 第三重防護：阻擋重複內容灌水
             const key = getArticleStorageKey(article);
             const saved = JSON.parse(localStorage.getItem(key) || '[]');
             if (saved.some(item => item.text === text)) {
@@ -548,6 +525,7 @@
                 return;
             }
 
+            // 通過所有防護，安全寫入留言
             const escapeHtml = str => str.replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
             const dateStr = new Date().toLocaleString('zh-TW', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
 
@@ -573,12 +551,12 @@
 
             document.getElementById('modal-category').innerText = article.category;
             const tagList = parseTags(article.tags);
-            const coverImg = fixImagePath(article.image);
             
-            const processedContent = preprocessMarkdownContent(article.content || '');
+            // 先將文章內文獨立行貼上的 YouTube 連結轉成嵌入式播放器，再交給 Markdown 解析圖片與排版
+            const contentWithVideos = embedInlineYouTube(article.content || '');
             const formattedContent = window.marked 
-                ? marked.parse(processedContent) 
-                : processedContent.split('\n\n').map(para => `<p class="mb-4 whitespace-pre-line">${para}</p>`).join('');
+                ? marked.parse(contentWithVideos) 
+                : contentWithVideos.split('\n\n').map(para => `<p class="mb-4 whitespace-pre-line">${para}</p>`).join('');
 
             const embedUrl = getYouTubeEmbedUrl(article.youtube);
             const videoHtml = embedUrl ? `
@@ -594,9 +572,7 @@
 
             let galleryImages = [];
             if (article.gallery && Array.isArray(article.gallery)) {
-                galleryImages = article.gallery
-                    .map(item => fixImagePath(typeof item === 'string' ? item : item.image))
-                    .filter(Boolean);
+                galleryImages = article.gallery.map(item => typeof item === 'string' ? item : item.image).filter(Boolean);
             }
 
             const galleryHtml = galleryImages.length > 0 ? `
@@ -632,8 +608,8 @@
                         </div>
                     ` : ''}
 
-                    <div onclick="openLightbox('${coverImg}')" class="rounded-2xl overflow-hidden my-6 max-h-[450px] bg-cream cursor-zoom-in">
-                        <img src="${coverImg}" 
+                    <div onclick="openLightbox('${article.image}')" class="rounded-2xl overflow-hidden my-6 max-h-[450px] bg-cream cursor-zoom-in">
+                        <img src="${article.image}" 
                              onerror="this.src='https://placehold.co/800x500/E6DDD0/2C2A29?text=Story+Image'"
                              alt="${article.title}" class="w-full h-full object-cover">
                     </div>
@@ -689,9 +665,48 @@
             document.getElementById('article-modal').classList.remove('hidden');
             document.body.style.overflow = 'hidden';
 
+            // 初始化驗證題與載入該篇文章留言
             generateCaptcha();
             renderCommentsList(index);
 
+            // 自動偵測緊鄰的多張圖片，將它們升級為左右並排網格
+            const contentArea = document.getElementById('article-content-area');
+            if (contentArea) {
+                const children = Array.from(contentArea.children);
+                let i = 0;
+                while (i < children.length) {
+                    const isSingleImgBlock = el => {
+                        if (el.tagName === 'IMG') return true;
+                        if (el.tagName === 'P') {
+                            const imgs = el.querySelectorAll('img');
+                            return imgs.length >= 1 && el.textContent.trim() === '';
+                        }
+                        return false;
+                    };
+
+                    if (isSingleImgBlock(children[i])) {
+                        let group = [];
+                        let j = i;
+                        while (j < children.length && isSingleImgBlock(children[j])) {
+                            if (children[j].tagName === 'IMG') group.push(children[j]);
+                            else group.push(...Array.from(children[j].querySelectorAll('img')));
+                            j++;
+                        }
+                        if (group.length >= 2) {
+                            const gridDiv = document.createElement('div');
+                            gridDiv.className = group.length === 2 ? 'photo-grid-pair' : 'photo-grid-triple';
+                            group.forEach(img => gridDiv.appendChild(img.cloneNode(true)));
+                            contentArea.insertBefore(gridDiv, children[i]);
+                            for (let k = i; k < j; k++) children[k].remove();
+                        }
+                        i = j;
+                    } else {
+                        i++;
+                    }
+                }
+            }
+
+            // 讓文章內文插入的照片也可以點擊放大檢視
             document.querySelectorAll('#article-content-area img').forEach(img => {
                 img.addEventListener('click', () => openLightbox(img.src));
             });
@@ -727,7 +742,7 @@
 
         function searchByTag(tagKeyword) {
             const results = articles.filter(a => 
-                parseTags(a.tags).some(t => t.includes(tagKeyword)) || a.title.includes(tagKeyword) || (a.content || '').includes(tagKeyword)
+                parseTags(a.tags).some(t => t.includes(tagKeyword)) || a.title.includes(tagKeyword) || a.content.includes(tagKeyword)
             );
             currentCategory = `標籤：#${tagKeyword}`;
             renderArticles(results);
@@ -750,7 +765,7 @@
             }
             const matched = articles.filter(a => 
                 a.title.toLowerCase().includes(q) || 
-                (a.content || '').toLowerCase().includes(q) || 
+                a.content.toLowerCase().includes(q) || 
                 parseTags(a.tags).some(t => t.toLowerCase().includes(q))
             );
 
