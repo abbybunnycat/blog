@@ -204,9 +204,15 @@
         <div class="max-w-3xl mx-auto bg-oatmeal rounded-3xl shadow-2xl overflow-hidden my-4 sm:my-8 border border-stone-200">
             <div class="sticky top-0 z-10 bg-oatmeal/95 backdrop-blur px-6 py-4 border-b border-stone-200 flex justify-between items-center">
                 <span id="modal-category" class="bg-terracotta text-white text-xs font-bold px-3 py-1 rounded-full">分類</span>
-                <button onclick="closeArticleModal()" class="w-9 h-9 rounded-full bg-cream hover:bg-stone-300 flex items-center justify-center text-charcoal transition">
-                    <i class="fa-solid fa-xmark"></i>
-                </button>
+                <div class="flex items-center space-x-2">
+                    <button id="copy-link-btn" onclick="copyCurrentArticleLink()" class="flex items-center space-x-1.5 bg-white hover:bg-terracotta hover:text-white text-charcoal border border-stone-200 text-xs font-medium px-3.5 py-2 rounded-full shadow-2xs transition">
+                        <i class="fa-solid fa-link"></i>
+                        <span>複製分享連結</span>
+                    </button>
+                    <button onclick="closeArticleModal()" class="w-9 h-9 rounded-full bg-cream hover:bg-stone-300 flex items-center justify-center text-charcoal transition">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </div>
             </div>
             <div id="modal-body" class="p-6 sm:p-10 space-y-6"></div>
         </div>
@@ -238,6 +244,7 @@
         let articles = [];
         let currentCategory = '全部';
         let currentCaptchaAnswer = 0;
+        let currentOpenArticleIndex = null;
 
         // 1. 萬能圖片路徑對齊器：確保在 GitHub Pages 子路徑 (/blog/) 下 100% 正確指向 images/uploads/...
         function fixImgUrl(url) {
@@ -327,146 +334,18 @@
             articles = combined;
             renderFeatured();
             renderArticles();
-        }
 
-        // 3. 渲染首頁精選最新文章
-        function renderFeatured() {
-            const container = document.getElementById('featured-container');
-            if (!container || articles.length === 0) return;
-            const latest = articles[0];
-            container.innerHTML = `
-                <div class="bg-white rounded-2xl p-4 shadow-md border border-stone-100 cursor-pointer group" onclick="openArticleModal(0)">
-                    <div class="relative h-48 sm:h-56 rounded-xl overflow-hidden mb-4 bg-cream">
-                        <img src="${fixImgUrl(latest.image)}" 
-                             data-raw="${latest.image || ''}"
-                             onerror="handleBrokenImg(this, 'https://placehold.co/800x500/E6DDD0/2C2A29?text=Featured+Story')"
-                             alt="${latest.title}" class="w-full h-full object-cover group-hover:scale-105 transition duration-500">
-                        <span class="absolute top-3 left-3 bg-terracotta text-white text-xs font-bold px-3 py-1 rounded-full shadow">
-                            🔥 最新漂流・${latest.category}
-                        </span>
-                    </div>
-                    <h3 class="magazine-title text-lg font-bold text-charcoal group-hover:text-terracotta transition line-clamp-1">
-                        ${latest.title}
-                    </h3>
-                    <p class="text-xs text-stone-500 mt-1.5 line-clamp-2">
-                        ${latest.summary || (latest.content || '').substring(0, 80) + '...'}
-                    </p>
-                </div>
-            `;
-        }
-
-        // 4. 渲染首頁文章列表卡片
-        function renderArticles(filteredList = null) {
-            const grid = document.getElementById('articles-grid');
-            const listToRender = filteredList || (currentCategory === '全部' 
-                ? articles 
-                : articles.filter(a => a.category === currentCategory));
-
-            document.getElementById('current-category-title').innerText = 
-                currentCategory === '全部' ? '最新漂流紀錄' : `分類：${currentCategory}`;
-            document.getElementById('article-count-text').innerText = 
-                `共收錄 ${listToRender.length} 篇真實生活紀錄`;
-
-            if (listToRender.length === 0) {
-                grid.innerHTML = `
-                    <div class="col-span-full text-center py-16 bg-cream/50 rounded-3xl border border-dashed border-stone-300">
-                        <p class="text-stone-500 text-base mb-3">這個分類目前還沒有文章喔！</p>
-                        <a href="admin/" class="inline-block bg-terracotta text-white text-sm px-5 py-2 rounded-full shadow hover:bg-charcoal transition">
-                            + 前往後台寫第一篇
-                        </a>
-                    </div>
-                `;
-                return;
-            }
-
-            grid.innerHTML = listToRender.map((article) => {
-                const originalIndex = articles.indexOf(article);
-                const hasGallery = Array.isArray(article.gallery) && article.gallery.length > 0;
-                const hasVideo = (article.youtube && article.youtube.trim() !== '') || /(youtube\.com|youtu\.be)/i.test(article.content || '');
-                const tagList = parseTags(article.tags);
-
-                return `
-                <article class="article-card bg-white rounded-2xl overflow-hidden border border-stone-200/70 flex flex-col justify-between cursor-pointer" onclick="openArticleModal(${originalIndex})">
-                    <div>
-                        <div class="relative h-52 overflow-hidden bg-cream">
-                            <img src="${fixImgUrl(article.image)}" 
-                                 data-raw="${article.image || ''}"
-                                 onerror="handleBrokenImg(this, 'https://placehold.co/600x400/E6DDD0/2C2A29?text=Lifestyle+Journal')"
-                                 alt="${article.title}" class="w-full h-full object-cover transition duration-500 hover:scale-105">
-                            <span class="absolute top-3 left-3 bg-charcoal/85 backdrop-blur-xs text-white text-xs font-medium px-3 py-1 rounded-full">
-                                ${article.category}
-                            </span>
-                            <div class="absolute bottom-2.5 right-2.5 flex space-x-1.5">
-                                ${hasGallery ? `<span class="bg-black/70 text-white text-[10px] px-2 py-0.5 rounded-md"><i class="fa-regular fa-images mr-1"></i>+${article.gallery.length}張</span>` : ''}
-                                ${hasVideo ? `<span class="bg-red-600/90 text-white text-[10px] px-2 py-0.5 rounded-md"><i class="fa-brands fa-youtube mr-1"></i>影片</span>` : ''}
-                            </div>
-                        </div>
-                        <div class="p-5">
-                            <div class="flex items-center justify-between text-xs text-stone-400 mb-2">
-                                <span><i class="fa-regular fa-calendar mr-1"></i>${article.date}</span>
-                            </div>
-                            <h3 class="magazine-title text-lg font-bold text-charcoal leading-snug mb-2 hover:text-terracotta transition line-clamp-2">
-                                ${article.title}
-                            </h3>
-                            <p class="text-xs sm:text-sm text-stone-600 line-clamp-3 leading-relaxed mb-3">
-                                ${article.summary || (article.content || '').substring(0, 90) + '...'}
-                            </p>
-                        </div>
-                    </div>
-
-                    <div class="px-5 pb-5 pt-2 border-t border-stone-100">
-                        ${article.highlight ? `
-                            <div class="bg-oatmeal text-terracotta text-[11px] font-medium px-3 py-1.5 rounded-lg mb-3 truncate">
-                                💡 ${article.highlight}
-                            </div>
-                        ` : ''}
-                        <div class="flex items-center justify-between gap-2">
-                            <div class="flex flex-wrap gap-1.5">
-                                ${tagList.map(tag => `<span class="text-[11px] text-stone-500 bg-stone-100 px-2 py-0.5 rounded">#${tag}</span>`).join('')}
-                            </div>
-                            <span id="card-views-${originalIndex}" class="text-[11px] text-stone-400 whitespace-nowrap flex items-center">
-                                <i class="fa-regular fa-eye mr-1"></i>...
-                            </span>
-                        </div>
-                    </div>
-                </article>
-            `}).join('');
-
-            listToRender.forEach(article => {
-                const idx = articles.indexOf(article);
-                fetchArticleViews(article, `card-views-${idx}`, false);
-            });
-        }
-
-        // 5. 雲端文章點閱計數器（免註冊・全球讀者真實累加）
-        function getArticleViewKey(article) {
-            const raw = (article.date || '') + '_' + (article.title || '');
-            let hash = 0;
-            for (let i = 0; i < raw.length; i++) {
-                hash = ((hash << 5) - hash) + raw.charCodeAt(i);
-                hash |= 0;
-            }
-            return 'post_' + Math.abs(hash);
-        }
-
-        async function fetchArticleViews(article, elementId, increment = false) {
-            const el = document.getElementById(elementId);
-            if (!el || !article) return;
-            const key = getArticleViewKey(article);
-            const endpoint = increment 
-                ? `https://api.counterapi.dev/v1/abbybunnycat_blog/${key}/up`
-                : `https://api.counterapi.dev/v1/abbybunnycat_blog/${key}`;
-            try {
-                const res = await fetch(endpoint);
-                if (res.ok) {
-                    const data = await res.json();
-                    const count = data.count || (increment ? 1 : 0);
-                    el.innerHTML = `<i class="fa-regular fa-eye mr-1"></i>${count} 次閱讀`;
+            // 若網址帶有 ?post=參數（例如從 Threads / LINE 分享點進來），自動直接開啟該篇文章！
+            const urlParams = new URLSearchParams(window.location.search);
+            const postParam = urlParams.get('post');
+            if (postParam !== null) {
+                const targetIdx = parseInt(postParam, 10);
+                if (!isNaN(targetIdx) && articles[targetIdx]) {
+                    openArticleModal(targetIdx);
                 } else {
-                    el.innerHTML = `<i class="fa-regular fa-eye mr-1"></i>${increment ? 1 : 0} 次閱讀`;
+                    const matchedIdx = articles.findIndex(a => getArticleViewKey(a) === postParam);
+                    if (matchedIdx !== -1) openArticleModal(matchedIdx);
                 }
-            } catch (e) {
-                el.innerHTML = `<i class="fa-regular fa-eye mr-1"></i>--`;
             }
         }
 
@@ -493,6 +372,14 @@
         function openArticleModal(index) {
             const article = articles[index];
             if (!article) return;
+
+            currentOpenArticleIndex = index;
+            // 自動更新瀏覽器網址為專屬分享直達連結（不重新整理頁面）
+            try {
+                const shareUrl = new URL(window.location.href);
+                shareUrl.searchParams.set('post', getArticleViewKey(article));
+                window.history.replaceState({}, '', shareUrl);
+            } catch (e) {}
 
             document.getElementById('modal-category').innerText = article.category;
             const tagList = parseTags(article.tags);
@@ -776,44 +663,39 @@
             document.getElementById('article-modal').classList.add('hidden');
             document.getElementById('modal-body').innerHTML = '';
             document.body.style.overflow = 'auto';
+            currentOpenArticleIndex = null;
+            // 關閉文章時把網址恢復成乾淨首頁
+            try {
+                const cleanUrl = new URL(window.location.href);
+                cleanUrl.searchParams.delete('post');
+                window.history.replaceState({}, '', cleanUrl);
+            } catch (e) {}
         }
 
-        function openLightbox(src) {
-            document.getElementById('lightbox-img').src = src;
-            document.getElementById('lightbox-modal').classList.remove('hidden');
-        }
+        // 一鍵複製當前文章的專屬直達分享連結（相容所有手機與桌面瀏覽器）
+        function copyCurrentArticleLink() {
+            if (currentOpenArticleIndex === null || !articles[currentOpenArticleIndex]) return;
+            const shareUrl = new URL(window.location.href);
+            shareUrl.searchParams.set('post', getArticleViewKey(articles[currentOpenArticleIndex]));
+            const finalUrl = shareUrl.toString();
 
-        function closeLightbox() {
-            document.getElementById('lightbox-modal').classList.add('hidden');
-        }
+            const tempInput = document.createElement('input');
+            tempInput.value = finalUrl;
+            document.body.appendChild(tempInput);
+            tempInput.select();
+            tempInput.setSelectionRange(0, 99999);
+            document.execCommand('copy');
+            document.body.removeChild(tempInput);
 
-        function filterCategory(category) {
-            currentCategory = category;
-            document.querySelectorAll('.cat-btn').forEach(btn => {
-                if (btn.dataset.cat === category) {
-                    btn.classList.remove('bg-cream', 'text-stone-700');
-                    btn.classList.add('bg-terracotta', 'text-white');
-                } else {
-                    btn.classList.remove('bg-terracotta', 'text-white');
-                    btn.classList.add('bg-cream', 'text-stone-700');
-                }
-            });
-            renderArticles();
-        }
-
-        function searchByTag(tagKeyword) {
-            const results = articles.filter(a => 
-                parseTags(a.tags).some(t => t.includes(tagKeyword)) || (a.title || '').includes(tagKeyword) || (a.content || '').includes(tagKeyword)
-            );
-            currentCategory = `標籤：#${tagKeyword}`;
-            renderArticles(results);
-        }
-
-        function toggleSearchModal() {
-            const modal = document.getElementById('search-modal');
-            modal.classList.toggle('hidden');
-            if (!modal.classList.contains('hidden')) {
-                document.getElementById('search-input').focus();
+            const btn = document.getElementById('copy-link-btn');
+            if (btn) {
+                const origHtml = btn.innerHTML;
+                btn.innerHTML = `<i class="fa-solid fa-check"></i><span>已複製網址！</span>`;
+                btn.classList.add('bg-sage', 'text-white', 'border-sage');
+                setTimeout(() => {
+                    btn.innerHTML = origHtml;
+                    btn.classList.remove('bg-sage', 'text-white', 'border-sage');
+                }, 2200);
             }
         }
 
