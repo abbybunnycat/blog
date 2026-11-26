@@ -11,7 +11,6 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700&family=Noto+Serif+TC:wght@600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <script src="https://identity.netlify.com/v1/netlify-identity-widget.js"></script>
     
     <script>
         tailwind.config = {
@@ -58,7 +57,7 @@
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
         /* 文章內文圖文混排專屬樣式 */
         .article-rich-content p { margin-bottom: 1.15rem; line-height: 1.85; color: #3f3c3a; font-size: 1.02rem; }
-        .article-rich-content h2, .article-rich-content h3 { font-family: 'Noto Serif TC', serif; font-weight: 700; color: #2C2A29; margin-top: 1.75rem; margin-bottom: 0.75rem; font-size: 1.35rem; }
+        .article-rich-content h2, .article-rich-content h3, .article-rich-content h4 { font-family: 'Noto Serif TC', serif; font-weight: 700; color: #2C2A29; margin-top: 1.75rem; margin-bottom: 0.75rem; font-size: 1.3rem; }
         .article-rich-content img { border-radius: 1rem; margin: 1.5rem auto; max-height: 520px; width: auto; max-width: 100%; box-shadow: 0 8px 20px -6px rgba(44, 42, 41, 0.15); cursor: zoom-in; display: block; }
         /* 連續兩張或三張照片自動左右並排網格 */
         .article-rich-content .photo-grid-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.75rem; margin: 1.5rem 0; }
@@ -67,7 +66,9 @@
         @media (min-width: 640px) { .article-rich-content .photo-grid-pair img { height: 320px; } }
         .article-rich-content blockquote { border-left: 4px solid #C86D51; background-color: #F2ECE1; padding: 0.85rem 1.25rem; border-radius: 0 0.75rem 0.75rem 0; margin: 1.25rem 0; font-style: italic; }
         .article-rich-content ul { list-style-type: disc; padding-left: 1.5rem; margin-bottom: 1.15rem; }
+        .article-rich-content ul ul { list-style-type: circle; margin-top: 0.35rem; margin-bottom: 0.35rem; }
         .article-rich-content ol { list-style-type: decimal; padding-left: 1.5rem; margin-bottom: 1.15rem; }
+        .article-rich-content li { margin-bottom: 0.35rem; line-height: 1.75; }
     </style>
 </head>
 <body class="antialiased selection:bg-terracotta selection:text-white">
@@ -168,9 +169,10 @@
             </div>
             <div class="flex items-center space-x-2 text-xs text-stone-500">
                 <span>熱門標籤：</span>
+                <button onclick="searchByTag('GOMAJI')" class="hover:text-terracotta underline">#GOMAJI</button>
+                <button onclick="searchByTag('CP值')" class="hover:text-terracotta underline">#CP值</button>
                 <button onclick="searchByTag('店狗')" class="hover:text-terracotta underline">#店狗出沒</button>
                 <button onclick="searchByTag('抗過敏')" class="hover:text-terracotta underline">#抗過敏飾品</button>
-                <button onclick="searchByTag('小動物')" class="hover:text-terracotta underline">#小動物</button>
             </div>
         </div>
 
@@ -235,17 +237,16 @@
     <script>
         let articles = [];
         let currentCategory = '全部';
+        let currentCaptchaAnswer = 0;
 
-        // 萬能圖片路徑對齊器：確保在 GitHub Pages 子路徑 (/blog/) 下 100% 正確指向 images/uploads/...
+        // 1. 萬能圖片路徑對齊器：確保在 GitHub Pages 子路徑 (/blog/) 下 100% 正確指向 images/uploads/...
         function fixImgUrl(url) {
             if (!url) return '';
             if (typeof url === 'object' && url.image) url = url.image;
             if (typeof url !== 'string') return '';
             let clean = url.trim();
             if (!clean) return '';
-            // 若已是完整外部網址（如 Unsplash），直接回傳
             if (/^https?:\/\//i.test(clean)) return clean;
-            // 移除開頭可能出現的 ./ 或 / 或 blog/
             clean = clean.replace(/^(\.\/|\/)+/, '');
             if (clean.startsWith('blog/')) {
                 clean = clean.replace(/^blog\/+/, '');
@@ -253,11 +254,85 @@
             return clean;
         }
 
+        // 圖片載入失敗時的智慧救援與路徑重試
+        function handleBrokenImg(imgEl, fallbackUrl) {
+            if (imgEl.dataset.retried) {
+                imgEl.src = fallbackUrl;
+                return;
+            }
+            imgEl.dataset.retried = '1';
+            const raw = imgEl.getAttribute('data-raw') || imgEl.getAttribute('src') || '';
+            const normalized = fixImgUrl(raw);
+            if (normalized && !imgEl.src.endsWith('/blog/' + normalized)) {
+                imgEl.src = '/blog/' + normalized;
+                return;
+            }
+            imgEl.src = fallbackUrl;
+        }
+
         function parseTags(tagsData) {
-// ... existing code ... -->
+            if (!tagsData) return [];
+            if (Array.isArray(tagsData)) return tagsData;
+            if (typeof tagsData === 'string') {
+                return tagsData.split(/[,，]/).map(t => t.trim()).filter(t => t !== '');
+            }
+            return [];
+        }
+
+        // 2. 載入所有文章（自動合併 GitHub posts/ 資料夾最新文章 + data/posts.json 早期存檔文章）
+        async function loadArticles() {
+            let combined = [];
+
+            // 嘗試讀取 posts/ 資料夾內所有獨立發佈的新文章
+            try {
+                const ghRes = await fetch('https://api.github.com/repos/abbybunnycat/blog/contents/posts');
+                if (ghRes.ok) {
+                    const files = await ghRes.json();
+                    if (Array.isArray(files)) {
+                        const jsonFiles = files.filter(f => f.name && f.name.endsWith('.json'));
+                        const postPromises = jsonFiles.map(async f => {
+                            try {
+                                const r = await fetch(`posts/${f.name}?t=${Date.now()}`);
+                                if (r.ok) return await r.json();
+                            } catch (e) {}
+                            return null;
+                        });
+                        const newPosts = (await Promise.all(postPromises)).filter(Boolean);
+                        combined = combined.concat(newPosts);
+                    }
+                }
+            } catch (e) {
+                console.warn('讀取 posts 資料夾略過或無新檔:', e);
+            }
+
+            // 讀取早期存檔文章 data/posts.json
+            try {
+                const legacyRes = await fetch(`data/posts.json?t=${Date.now()}`);
+                if (legacyRes.ok) {
+                    const legacyData = await legacyRes.json();
+                    const legacyList = Array.isArray(legacyData) ? legacyData : (legacyData.posts || []);
+                    combined = combined.concat(legacyList);
+                }
+            } catch (e) {
+                console.error('讀取 data/posts.json 失敗:', e);
+            }
+
+            // 依發佈日期由新到舊自動排序（同日期時新建立的排最前面）
+            combined.sort((a, b) => {
+                const da = new Date(a.date || '2000-01-01').getTime();
+                const db = new Date(b.date || '2000-01-01').getTime();
+                return db - da;
+            });
+
+            articles = combined;
+            renderFeatured();
+            renderArticles();
+        }
+
+        // 3. 渲染首頁精選最新文章
         function renderFeatured() {
             const container = document.getElementById('featured-container');
-            if (articles.length === 0) return;
+            if (!container || articles.length === 0) return;
             const latest = articles[0];
             container.innerHTML = `
                 <div class="bg-white rounded-2xl p-4 shadow-md border border-stone-100 cursor-pointer group" onclick="openArticleModal(0)">
@@ -274,12 +349,13 @@
                         ${latest.title}
                     </h3>
                     <p class="text-xs text-stone-500 mt-1.5 line-clamp-2">
-                        ${latest.summary || latest.content.substring(0, 80) + '...'}
+                        ${latest.summary || (latest.content || '').substring(0, 80) + '...'}
                     </p>
                 </div>
             `;
         }
 
+        // 4. 渲染首頁文章列表卡片
         function renderArticles(filteredList = null) {
             const grid = document.getElementById('articles-grid');
             const listToRender = filteredList || (currentCategory === '全部' 
@@ -305,7 +381,7 @@
 
             grid.innerHTML = listToRender.map((article) => {
                 const originalIndex = articles.indexOf(article);
-                const hasGallery = article.gallery && article.gallery.length > 0;
+                const hasGallery = Array.isArray(article.gallery) && article.gallery.length > 0;
                 const hasVideo = (article.youtube && article.youtube.trim() !== '') || /(youtube\.com|youtu\.be)/i.test(article.content || '');
                 const tagList = parseTags(article.tags);
 
@@ -333,7 +409,7 @@
                                 ${article.title}
                             </h3>
                             <p class="text-xs sm:text-sm text-stone-600 line-clamp-3 leading-relaxed mb-3">
-                                ${article.summary || article.content.substring(0, 90) + '...'}
+                                ${article.summary || (article.content || '').substring(0, 90) + '...'}
                             </p>
                         </div>
                     </div>
@@ -356,14 +432,13 @@
                 </article>
             `}).join('');
 
-            // 非同步抓取每篇文章的雲端累積點閱數
             listToRender.forEach(article => {
                 const idx = articles.indexOf(article);
                 fetchArticleViews(article, `card-views-${idx}`, false);
             });
         }
 
-        // 雲端文章點閱計數器（免註冊・全球讀者真實累加）
+        // 5. 雲端文章點閱計數器（免註冊・全球讀者真實累加）
         function getArticleViewKey(article) {
             const raw = (article.date || '') + '_' + (article.title || '');
             let hash = 0;
@@ -378,25 +453,95 @@
             const el = document.getElementById(elementId);
             if (!el || !article) return;
             const key = getArticleViewKey(article);
-        // 圖片載入失敗時的智慧救援與路徑提示
-        function handleBrokenImg(imgEl, fallbackUrl) {
-            if (imgEl.dataset.retried) {
-                imgEl.src = fallbackUrl;
-                return;
+            const endpoint = increment 
+                ? `https://api.counterapi.dev/v1/abbybunnycat_blog/${key}/up`
+                : `https://api.counterapi.dev/v1/abbybunnycat_blog/${key}`;
+            try {
+                const res = await fetch(endpoint);
+                if (res.ok) {
+                    const data = await res.json();
+                    const count = data.count || (increment ? 1 : 0);
+                    el.innerHTML = `<i class="fa-regular fa-eye mr-1"></i>${count} 次閱讀`;
+                } else {
+                    el.innerHTML = `<i class="fa-regular fa-eye mr-1"></i>${increment ? 1 : 0} 次閱讀`;
+                }
+            } catch (e) {
+                el.innerHTML = `<i class="fa-regular fa-eye mr-1"></i>--`;
             }
-            imgEl.dataset.retried = '1';
-            const raw = imgEl.getAttribute('data-raw') || imgEl.getAttribute('src') || '';
-            // 嘗試改用絕對 /blog/... 路徑再試一次
-            const normalized = fixImgUrl(raw);
-            if (normalized && !imgEl.src.endsWith('/blog/' + normalized)) {
-                imgEl.src = '/blog/' + normalized;
-                return;
-            }
-            imgEl.src = fallbackUrl;
         }
 
+        // 6. YouTube 網址轉換與段落自動嵌入
         function getYouTubeEmbedUrl(url) {
-// ... existing code ... -->
+            if (!url) return null;
+            const regExp = /(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/;
+            const match = url.match(regExp);
+            return match ? `https://www.youtube.com/embed/${match[1]}` : null;
+        }
+
+        function renderMarkdownWithVideos(rawText) {
+            if (!rawText) return '';
+            // 把單獨一行的 YouTube 網址轉成嵌入式影片播放器
+            const processed = rawText.replace(/^(?:<p>)?\s*(https?:\/\/(?:www\.)?(?:youtube\.com\/(?:watch\?v=|shorts\/)|youtu\.be\/)[^\s<]+)\s*(?:<\/p>)?$/gm, (match, ytUrl) => {
+                const embed = getYouTubeEmbedUrl(ytUrl);
+                if (!embed) return match;
+                return `\n\n<div class="my-6 rounded-2xl overflow-hidden shadow-md border border-stone-200 aspect-video bg-black"><iframe class="w-full h-full" src="${embed}" title="YouTube video" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe></div>\n\n`;
+            });
+            return typeof marked !== 'undefined' ? marked.parse(processed) : processed.replace(/\n/g, '<br>');
+        }
+
+        // 7. 開啟完整文章彈窗（含更多照片寫真、並排圖片、影片與留言板）
+        function openArticleModal(index) {
+            const article = articles[index];
+            if (!article) return;
+
+            document.getElementById('modal-category').innerText = article.category;
+            const tagList = parseTags(article.tags);
+
+            // 獨立欄位 YouTube 影片
+            let videoHtml = '';
+            const embedUrl = getYouTubeEmbedUrl(article.youtube);
+            if (embedUrl) {
+                videoHtml = `
+                    <div class="my-6">
+                        <h4 class="text-sm font-bold text-stone-600 mb-2 flex items-center">
+                            <i class="fa-brands fa-youtube text-red-600 mr-2 text-lg"></i>實拍影片紀錄
+                        </h4>
+                        <div class="aspect-video w-full rounded-2xl overflow-hidden shadow-md bg-black">
+                            <iframe class="w-full h-full" src="${embedUrl}" frameborder="0" allowfullscreen></iframe>
+                        </div>
+                    </div>
+                `;
+            }
+
+            // 文章底下的更多照片寫真集（相容 { image: "..." } 與純字串陣列）
+            let galleryHtml = '';
+            if (Array.isArray(article.gallery) && article.gallery.length > 0) {
+                const validImgs = article.gallery
+                    .map(item => fixImgUrl(typeof item === 'string' ? item : item?.image))
+                    .filter(Boolean);
+                if (validImgs.length > 0) {
+                    galleryHtml = `
+                        <div class="my-8 pt-6 border-t border-stone-200">
+                            <h4 class="magazine-title text-lg font-bold text-charcoal mb-4 flex items-center">
+                                <i class="fa-regular fa-images text-terracotta mr-2"></i>更多照片寫真（點擊可放大）
+                            </h4>
+                            <div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                                ${validImgs.map(imgSrc => `
+                                    <div onclick="openLightbox('${imgSrc}')" class="aspect-square rounded-xl overflow-hidden cursor-zoom-in group shadow-xs bg-cream border border-stone-200/60">
+                                        <img src="${imgSrc}" 
+                                             data-raw="${imgSrc}"
+                                             onerror="handleBrokenImg(this, 'https://placehold.co/400x400/E6DDD0/2C2A29?text=Photo')"
+                                             class="w-full h-full object-cover group-hover:scale-105 transition duration-300" alt="文章寫真">
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    `;
+                }
+            }
+
+            const formattedContent = renderMarkdownWithVideos(article.content || '');
+
             document.getElementById('modal-body').innerHTML = `
                 <div class="space-y-4">
                     <div class="text-xs text-stone-400 flex flex-wrap items-center gap-x-3 gap-y-1">
@@ -416,7 +561,8 @@
                             <div class="text-sm sm:text-base font-medium text-charcoal">${article.highlight}</div>
                         </div>
                     ` : ''}
-                    <div onclick="openLightbox('${fixImgUrl(article.image)}')" class="rounded-2xl overflow-hidden my-6 max-h-[450px] bg-cream cursor-zoom-in">
+
+                    <div onclick="openLightbox(this.querySelector('img').src)" class="rounded-2xl overflow-hidden my-6 max-h-[450px] bg-cream cursor-zoom-in">
                         <img src="${fixImgUrl(article.image)}" 
                              data-raw="${article.image || ''}"
                              onerror="handleBrokenImg(this, 'https://placehold.co/800x500/E6DDD0/2C2A29?text=Story+Image')"
@@ -481,11 +627,10 @@
                 if (modalText && cardEl) cardEl.innerHTML = modalText;
             });
 
-            // 初始化驗證題與載入該篇文章留言
             generateCaptcha();
             renderCommentsList(index);
 
-            // 自動偵測緊鄰的多張圖片，將它們升級為左右並排網格
+            // 自動偵測連續緊鄰的 2~3 張圖片並排顯示
             const contentArea = document.getElementById('article-content-area');
             if (contentArea) {
                 const children = Array.from(contentArea.children);
@@ -518,19 +663,113 @@
                         i = j;
                     } else {
                         i++;
-            // 修正文章內文插圖的路徑並讓照片也可以點擊放大檢視
-            document.querySelectorAll('#article-content-area img').forEach(img => {
-                const rawSrc = img.getAttribute('src');
-                if (rawSrc) {
-                    const fixed = fixImgUrl(rawSrc);
-                    img.setAttribute('data-raw', rawSrc);
-                    img.setAttribute('src', fixed);
-                    img.onerror = function() {
-                        handleBrokenImg(this, 'https://placehold.co/800x500/E6DDD0/2C2A29?text=Image+Not+Found');
-                    };
+                    }
                 }
-                img.addEventListener('click', () => openLightbox(img.src));
+
+                // 修正文章內文所有插圖路徑並綁定點擊放大燈箱
+                contentArea.querySelectorAll('img').forEach(img => {
+                    const rawSrc = img.getAttribute('src');
+                    if (rawSrc) {
+                        const fixed = fixImgUrl(rawSrc);
+                        img.setAttribute('data-raw', rawSrc);
+                        img.setAttribute('src', fixed);
+                        img.onerror = function() {
+                            handleBrokenImg(this, 'https://placehold.co/800x500/E6DDD0/2C2A29?text=Image+Not+Found');
+                        };
+                    }
+                    img.addEventListener('click', () => openLightbox(img.src));
+                });
+            }
+        }
+
+        // 8. 防洗版留言板邏輯
+        function generateCaptcha() {
+            const a = Math.floor(Math.random() * 8) + 1;
+            const b = Math.floor(Math.random() * 8) + 1;
+            currentCaptchaAnswer = a + b;
+            const qEl = document.getElementById('captcha-question');
+            if (qEl) qEl.innerText = `${a} + ${b} = ?`;
+        }
+
+        function getCommentsStorageKey(index) {
+            const art = articles[index];
+            return 'blog_comments_' + (art ? getArticleViewKey(art) : index);
+        }
+
+        function renderCommentsList(index) {
+            const listEl = document.getElementById('comments-list');
+            if (!listEl) return;
+            const saved = JSON.parse(localStorage.getItem(getCommentsStorageKey(index)) || '[]');
+            if (saved.length === 0) {
+                listEl.innerHTML = `<p class="text-xs text-stone-400 text-center py-4">還沒有人留下漂流瓶，快來搶頭香跟少女聊天吧！</p>`;
+                return;
+            }
+            listEl.innerHTML = saved.map(c => `
+                <div class="bg-white p-3.5 rounded-2xl border border-stone-200/70 space-y-1">
+                    <div class="flex justify-between items-center text-xs">
+                        <span class="font-bold text-charcoal">${c.author}</span>
+                        <span class="text-stone-400">${c.time}</span>
+                    </div>
+                    <p class="text-sm text-stone-700 leading-relaxed">${c.text}</p>
+                </div>
+            `).join('');
+        }
+
+        function submitComment(index) {
+            const feedbackEl = document.getElementById('comment-feedback');
+            const showFeedback = (msg, isError = true) => {
+                feedbackEl.innerText = msg;
+                feedbackEl.className = `text-xs mt-1 ${isError ? 'text-red-600 font-medium' : 'text-sage font-medium'}`;
+                feedbackEl.classList.remove('hidden');
+            };
+
+            const lastPostTime = parseInt(localStorage.getItem('blog_last_comment_time') || '0', 10);
+            const now = Date.now();
+            if (now - lastPostTime < 60000) {
+                const waitSec = Math.ceil((60000 - (now - lastPostTime)) / 1000);
+                showFeedback(`⏳ 休息一下喝口茶～請再等 ${waitSec} 秒後才能發送下一則留言喔！`);
+                return;
+            }
+
+            const captchaVal = parseInt(document.getElementById('comment-captcha').value, 10);
+            if (captchaVal !== currentCaptchaAnswer) {
+                showFeedback('❌ 算術驗證答錯囉！請重新計算一次～');
+                generateCaptcha();
+                return;
+            }
+
+            const rawText = document.getElementById('comment-text').value.trim();
+            if (rawText.length < 2) {
+                showFeedback('✍️ 請至少輸入 2 個字再送出喔！');
+                return;
+            }
+
+            const author = document.getElementById('comment-author').value.trim() || '路過的善良好朋友';
+            const escapeHtml = str => str.replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
+
+            const key = getCommentsStorageKey(index);
+            const saved = JSON.parse(localStorage.getItem(key) || '[]');
+            if (saved.length > 0 && saved[0].raw === rawText) {
+                showFeedback('⚠️ 剛剛已經發過一模一樣的內容囉！');
+                return;
+            }
+
+            const timeStr = new Date().toLocaleString('zh-TW', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+            saved.unshift({
+                author: escapeHtml(author),
+                text: escapeHtml(rawText),
+                raw: rawText,
+                time: timeStr
             });
+
+            localStorage.setItem(key, JSON.stringify(saved));
+            localStorage.setItem('blog_last_comment_time', String(now));
+
+            document.getElementById('comment-text').value = '';
+            document.getElementById('comment-captcha').value = '';
+            generateCaptcha();
+            renderCommentsList(index);
+            showFeedback('🎉 留言送出成功！感謝你的溫暖回應～', false);
         }
 
         function closeArticleModal() {
@@ -543,6 +782,7 @@
             document.getElementById('lightbox-img').src = src;
             document.getElementById('lightbox-modal').classList.remove('hidden');
         }
+
         function closeLightbox() {
             document.getElementById('lightbox-modal').classList.add('hidden');
         }
@@ -563,7 +803,7 @@
 
         function searchByTag(tagKeyword) {
             const results = articles.filter(a => 
-                parseTags(a.tags).some(t => t.includes(tagKeyword)) || a.title.includes(tagKeyword) || a.content.includes(tagKeyword)
+                parseTags(a.tags).some(t => t.includes(tagKeyword)) || (a.title || '').includes(tagKeyword) || (a.content || '').includes(tagKeyword)
             );
             currentCategory = `標籤：#${tagKeyword}`;
             renderArticles(results);
@@ -585,8 +825,8 @@
                 return;
             }
             const matched = articles.filter(a => 
-                a.title.toLowerCase().includes(q) || 
-                a.content.toLowerCase().includes(q) || 
+                (a.title || '').toLowerCase().includes(q) || 
+                (a.content || '').toLowerCase().includes(q) || 
                 parseTags(a.tags).some(t => t.toLowerCase().includes(q))
             );
 
@@ -607,6 +847,9 @@
                 </div>
             `}).join('');
         }
+
+        // 網頁載入完成立刻啟動讀取所有文章！
+        window.addEventListener('DOMContentLoaded', loadArticles);
     </script>
 </body>
 </html>
