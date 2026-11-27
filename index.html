@@ -349,6 +349,166 @@
             }
         }
 
+        // 3. 產生每篇文章專屬的唯一識別鍵（用於點閱數與分享連結）
+        function getArticleViewKey(article) {
+            const raw = (article.date || '') + '_' + (article.title || '');
+            let hash = 0;
+            for (let i = 0; i < raw.length; i++) {
+                hash = ((hash << 5) - hash) + raw.charCodeAt(i);
+                hash |= 0;
+            }
+            return 'post_' + Math.abs(hash);
+        }
+
+        // 4. 雲端點閱率讀取與累加（counterapi.dev 免費免註冊）
+        async function fetchArticleViews(article, elementId, increment = false) {
+            const el = document.getElementById(elementId);
+            if (!el) return;
+            const key = getArticleViewKey(article);
+            const endpoint = increment
+                ? `https://api.counterapi.dev/v1/abbybunnycat_blog/${key}/up`
+                : `https://api.counterapi.dev/v1/abbybunnycat_blog/${key}`;
+            try {
+                const res = await fetch(endpoint);
+                if (res.ok) {
+                    const data = await res.json();
+                    const count = data.count || 0;
+                    el.innerHTML = `<i class="fa-regular fa-eye mr-1"></i>${count}`;
+                } else if (!increment) {
+                    el.innerHTML = `<i class="fa-regular fa-eye mr-1"></i>0`;
+                }
+            } catch (e) {
+                el.innerHTML = `<i class="fa-regular fa-eye mr-1"></i>--`;
+            }
+        }
+
+        // 5. 渲染首頁精選推薦卡片（最新第一篇）與所有文章列表
+        function renderFeatured() {
+            const container = document.getElementById('featured-container');
+            if (!container || articles.length === 0) return;
+            const latest = articles[0];
+            const imgSrc = fixImgUrl(latest.image);
+            container.innerHTML = `
+                <div onclick="openArticleModal(0)" class="bg-white rounded-2xl p-4 shadow-md border border-stone-200/80 cursor-pointer group hover:shadow-lg transition">
+                    <div class="relative rounded-xl overflow-hidden aspect-[16/10] mb-3 bg-oatmeal">
+                        <img src="${imgSrc}" data-raw="${latest.image || ''}"
+                             onerror="handleBrokenImg(this, 'https://placehold.co/600x400/E6DDD0/2C2A29?text=Featured+Story')"
+                             alt="${latest.title}" class="w-full h-full object-cover group-hover:scale-105 transition duration-500">
+                        <span class="absolute top-3 left-3 bg-terracotta text-white text-[11px] font-bold px-2.5 py-1 rounded-full shadow-xs">
+                            🔥 最新漂流主打
+                        </span>
+                    </div>
+                    <div class="text-[11px] text-stone-400 mb-1">${latest.date} ｜ ${latest.category}</div>
+                    <h3 class="magazine-title text-base sm:text-lg font-bold text-charcoal line-clamp-2 group-hover:text-terracotta transition">
+                        ${latest.title}
+                    </h3>
+                </div>
+            `;
+        }
+
+        function renderArticles() {
+            const grid = document.getElementById('articles-grid');
+            const countText = document.getElementById('article-count-text');
+            if (!grid) return;
+
+            const filtered = currentCategory === '全部'
+                ? articles
+                : articles.filter(a => a.category === currentCategory);
+
+            if (countText) {
+                countText.innerText = `共收錄 ${filtered.length} 篇真實生活紀錄`;
+            }
+
+            if (filtered.length === 0) {
+                grid.innerHTML = `
+                    <div class="col-span-full text-center py-12 text-stone-400">
+                        <p class="text-sm">這個分類目前還沒有文章喔，快去後台寫一篇吧！</p>
+                    </div>
+                `;
+                return;
+            }
+
+            grid.innerHTML = filtered.map(article => {
+                const idx = articles.indexOf(article);
+                const imgSrc = fixImgUrl(article.image);
+                const summaryText = article.summary || (article.content || '').replace(/[#*`>\-\[\]()]/g, '').slice(0, 75) + '...';
+                return `
+                    <article onclick="openArticleModal(${idx})" class="article-card bg-white rounded-3xl overflow-hidden border border-stone-200/80 shadow-xs cursor-pointer flex flex-col justify-between group">
+                        <div>
+                            <div class="relative aspect-[16/10] bg-cream overflow-hidden">
+                                <img src="${imgSrc}" data-raw="${article.image || ''}"
+                                     onerror="handleBrokenImg(this, 'https://placehold.co/600x400/E6DDD0/2C2A29?text=Story+Image')"
+                                     alt="${article.title}" class="w-full h-full object-cover group-hover:scale-105 transition duration-500">
+                                <span class="absolute top-3 left-3 bg-charcoal/85 backdrop-blur-xs text-white text-xs font-medium px-3 py-1 rounded-full">
+                                    ${article.category}
+                                </span>
+                            </div>
+                            <div class="p-5 sm:p-6 space-y-2.5">
+                                <div class="text-xs text-stone-400 flex items-center justify-between">
+                                    <span>${article.date}</span>
+                                    <span id="card-views-${idx}" class="text-stone-400"><i class="fa-regular fa-eye mr-1"></i>...</span>
+                                </div>
+                                <h4 class="magazine-title text-lg sm:text-xl font-bold text-charcoal leading-snug line-clamp-2 group-hover:text-terracotta transition">
+                                    ${article.title}
+                                </h4>
+                                <p class="text-sm text-stone-600 line-clamp-3 leading-relaxed">
+                                    ${summaryText}
+                                </p>
+                            </div>
+                        </div>
+                        <div class="px-5 sm:px-6 pb-5 pt-2 flex items-center justify-between text-xs font-medium text-terracotta">
+                            <span>閱讀完整漂流紀錄</span>
+                            <i class="fa-solid fa-arrow-right group-hover:translate-x-1 transition"></i>
+                        </div>
+                    </article>
+                `;
+            }).join('');
+
+            filtered.forEach(article => {
+                const idx = articles.indexOf(article);
+                fetchArticleViews(article, `card-views-${idx}`, false);
+            });
+        }
+
+        function filterCategory(cat) {
+            currentCategory = cat;
+            document.getElementById('current-category-title').innerText = cat === '全部' ? '最新漂流紀錄' : `${cat} 精選紀錄`;
+            document.querySelectorAll('.cat-btn').forEach(btn => {
+                if (btn.dataset.cat === cat) {
+                    btn.className = 'cat-btn active px-4 py-1.5 rounded-full bg-terracotta text-white font-medium whitespace-nowrap transition';
+                } else {
+                    btn.className = 'cat-btn px-4 py-1.5 rounded-full bg-cream text-stone-700 hover:bg-stone-200 font-medium whitespace-nowrap transition';
+                }
+            });
+            renderArticles();
+        }
+
+        function openLightbox(src) {
+            if (!src) return;
+            document.getElementById('lightbox-img').src = src;
+            document.getElementById('lightbox-modal').classList.remove('hidden');
+        }
+
+        function closeLightbox() {
+            document.getElementById('lightbox-modal').classList.add('hidden');
+        }
+
+        function toggleSearchModal() {
+            const modal = document.getElementById('search-modal');
+            modal.classList.toggle('hidden');
+            if (!modal.classList.contains('hidden')) {
+                setTimeout(() => document.getElementById('search-input').focus(), 100);
+            }
+        }
+
+        function searchByTag(tag) {
+            const modal = document.getElementById('search-modal');
+            modal.classList.remove('hidden');
+            const input = document.getElementById('search-input');
+            input.value = tag;
+            handleSearch(tag);
+        }
+
         // 6. YouTube 網址轉換與段落自動嵌入
         function getYouTubeEmbedUrl(url) {
             if (!url) return null;
