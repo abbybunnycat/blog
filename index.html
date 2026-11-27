@@ -512,15 +512,16 @@
         // 6. YouTube 網址轉換與段落自動嵌入
         function getYouTubeEmbedUrl(url) {
             if (!url) return null;
-            const regExp = /(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/;
+            const regExp = /(?:youtube\.com\/(?:watch\?(?:.*&)?v=|embed\/|shorts\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/;
             const match = url.match(regExp);
             return match ? `https://www.youtube.com/embed/${match[1]}` : null;
         }
 
         function renderMarkdownWithVideos(rawText) {
             if (!rawText) return '';
-            // 把單獨一行的 YouTube 網址轉成嵌入式影片播放器
-            const processed = rawText.replace(/^(?:<p>)?\s*(https?:\/\/(?:www\.)?(?:youtube\.com\/(?:watch\?v=|shorts\/)|youtu\.be\/)[^\s<]+)\s*(?:<\/p>)?$/gm, (match, ytUrl) => {
+            // 支援純網址、Markdown 自動連結 [url](url) 或 <url> 單獨成行時自動轉為嵌入式播放器
+            const processed = rawText.replace(/^[ \t]*(?:<p>)?[ \t]*(?:\[(https?:\/\/[^\]]+)\]\(\1\)|<(https?:\/\/[^>]+)>|(https?:\/\/(?:www\.|m\.)?(?:youtube\.com\/(?:watch\?(?:.*&)?v=|shorts\/|embed\/)|youtu\.be\/)[^\s<)\]]+))[ \t]*(?:<\/p>)?[ \t]*$/gm, (match, u1, u2, u3) => {
+                const ytUrl = u1 || u2 || u3;
                 const embed = getYouTubeEmbedUrl(ytUrl);
                 if (!embed) return match;
                 return `\n\n<div class="my-6 rounded-2xl overflow-hidden shadow-md border border-stone-200 aspect-video bg-black"><iframe class="w-full h-full" src="${embed}" title="YouTube video" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe></div>\n\n`;
